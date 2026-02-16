@@ -1,7 +1,7 @@
 use clap::Parser;
-use csv::{ReaderBuilder, Trim};
-use libpenguin::{PenguinError, Transaction};
-use std::io::{self, Write};
+use csv::{ReaderBuilder, Trim, WriterBuilder};
+use libpenguin::{PenguinBuilder, PenguinError};
+use std::{io, num::NonZeroUsize};
 use thiserror::Error;
 
 /// Penguin CLI - A command line tool to process a list of transactions with Penguin Engine
@@ -17,21 +17,33 @@ enum CliError {
     Penguin(#[from] PenguinError),
     #[error("CSV parse error: {0}")]
     Csv(#[from] csv::Error),
+    #[error("I/O error: {0}")]
+    IO(#[from] io::Error),
 }
 
 #[tokio::main]
 async fn main() -> Result<(), CliError> {
     let args = Args::parse();
-    let mut rdr = ReaderBuilder::new().trim(Trim::All).from_path(args.input)?;
-    let iter = rdr.deserialize();
+    let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(args.input)?;
+    let reader = reader.deserialize();
 
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
+    let num_workers = std::thread::available_parallelism().unwrap_or(
+        NonZeroUsize::new(4).unwrap(), // Not zero, so cannot fail
+    );
 
-    for line in iter {
-        let tx: Transaction = line?;
-        writeln!(out, "{:?}", tx).map_err(PenguinError::from)?;
+    let mut penguin = PenguinBuilder::from_reader(reader)
+        .with_num_workers(num_workers)
+        .build();
+
+    let output = penguin.run().await?;
+
+    let mut writer = WriterBuilder::new()
+        .has_headers(true)
+        .from_writer(io::stdout());
+    for state in output {
+        writer.serialize(state)?;
     }
+    writer.flush()?;
 
     Ok(())
 }

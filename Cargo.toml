@@ -4,5 +4,5 @@ default-members = ["penguin-cli"]
 resolver = "3"
 
 [workspace.dependencies]
-tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "sync"] }
 thiserror = "2.0.18"
