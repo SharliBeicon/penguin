@@ -218,4 +218,198 @@ fn apply_tx(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn tx(tx_type: TransactionType, client: u16, tx: u32, amount: Option<f64>) -> Transaction {
+        Transaction {
+            tx_type,
+            client,
+            tx,
+            amount,
+        }
+    }
+
+    fn assert_state(state: &ClientState, client: u16, available: f64, held: f64, total: f64) {
+        assert_eq!(state.client, client);
+        assert!((state.available - available).abs() < f64::EPSILON);
+        assert!((state.held - held).abs() < f64::EPSILON);
+        assert!((state.total - total).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn run_multiple_clients_with_mixed_transactions() {
+        let inputs = [
+            "deposit, 1, 1, 1.0",
+            "deposit, 2, 2, 2.0",
+            "deposit, 1, 3, 2.0",
+            "withdrawal, 1, 4, 1.5",
+            "withdrawal, 2, 5, 3.0",
+            "deposit, 1, 5,",
+        ];
+        let reader = inputs.into_iter().map(|line| {
+            Ok::<Transaction, PenguinError>(line.parse::<Transaction>().expect("valid transaction"))
+        });
+        let mut penguin = Penguin {
+            reader,
+            num_workers: 2,
+            _logger: None,
+        };
+
+        let mut output = penguin.run().await.expect("run should succeed");
+        output.sort_by_key(|state| state.client);
+
+        assert_eq!(output.len(), 2);
+        assert_state(&output[0], 1, 1.5, 0.0, 1.5);
+        assert_state(&output[1], 2, 2.0, 0.0, 2.0);
+    }
+
+    #[tokio::test]
+    async fn run_returns_parse_error_with_line_number() {
+        let reader = vec![Ok(tx(TransactionType::Deposit, 1, 1, Some(1.0))), Err(())].into_iter();
+        let mut penguin = Penguin {
+            reader,
+            num_workers: 1,
+            _logger: None,
+        };
+
+        let err = penguin.run().await.expect_err("expected parse error");
+        assert!(matches!(err, PenguinError::Parse(2)));
+    }
+
+    #[test]
+    fn deposit_and_withdrawal_update_balances() {
+        let mut client_state = ClientState::new(1);
+        let registry = HashMap::new();
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &registry,
+        )
+        .expect("deposit should succeed");
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Withdrawal, 1, 2, Some(0.4)),
+            &registry,
+        )
+        .expect("withdrawal should succeed");
+
+        assert_state(&client_state, 1, 0.6, 0.0, 0.6);
+    }
+
+    #[test]
+    fn withdrawal_with_insufficient_funds_is_ignored() {
+        let mut client_state = ClientState::new(1);
+        let registry = HashMap::new();
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &registry,
+        )
+        .expect("deposit should succeed");
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Withdrawal, 1, 2, Some(2.0)),
+            &registry,
+        )
+        .expect("withdrawal is ignored when insufficient");
+
+        assert_state(&client_state, 1, 1.0, 0.0, 1.0);
+    }
+
+    #[test]
+    fn dispute_and_resolve_move_funds_between_available_and_held() {
+        let mut client_state = ClientState::new(1);
+        let mut registry = HashMap::new();
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &registry,
+        )
+        .expect("deposit should succeed");
+
+        registry.insert((1, 1), 1.0);
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Dispute, 1, 1, None),
+            &registry,
+        )
+        .expect("dispute should succeed");
+        assert_state(&client_state, 1, 0.0, 1.0, 1.0);
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Resolve, 1, 1, None),
+            &registry,
+        )
+        .expect("resolve should succeed");
+
+        assert_state(&client_state, 1, 1.0, 0.0, 1.0);
+    }
+
+    #[test]
+    fn chargeback_locks_account_and_updates_totals() {
+        let mut client_state = ClientState::new(1);
+        let mut registry = HashMap::new();
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &registry,
+        )
+        .expect("deposit should succeed");
+
+        registry.insert((1, 1), 1.0);
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Dispute, 1, 1, None),
+            &registry,
+        )
+        .expect("dispute should succeed");
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Chargeback, 1, 1, None),
+            &registry,
+        )
+        .expect("chargeback should succeed");
+
+        assert!(client_state.locked);
+        assert_state(&client_state, 1, -1.0, 0.0, 0.0);
+
+        apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Deposit, 1, 2, Some(5.0)),
+            &registry,
+        )
+        .expect("locked accounts ignore deposits");
+
+        assert_state(&client_state, 1, -1.0, 0.0, 0.0);
+    }
+
+    #[test]
+    fn deposit_without_amount_is_an_error() {
+        let mut client_state = ClientState::new(1);
+        let registry = HashMap::new();
+
+        let err = apply_tx(
+            &mut client_state,
+            &tx(TransactionType::Deposit, 1, 1, None),
+            &registry,
+        )
+        .expect_err("expected deposit without amount to error");
+
+        assert!(matches!(
+            err,
+            PenguinError::DepositOrWithdrawalWithoutAmount(1)
+        ));
+    }
+}
