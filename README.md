@@ -4,7 +4,7 @@
     <div id="toc">
         <ul style="list-style: none">
             <summary>
-                <img src="misc/title.svg" alt="Penguin" />
+                <h1>Penguin</h1>
             </summary>
         </ul>
     </div>
