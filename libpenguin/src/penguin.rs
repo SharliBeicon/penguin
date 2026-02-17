@@ -119,13 +119,15 @@ async fn spawn_worker(mut rx: mpsc::Receiver<Transaction>) -> Vec<ClientState> {
             .entry(tx.client)
             .or_insert(ClientState::new(tx.client));
 
-        if let Some(amount) = tx.amount {
+        if let Some(amount) = tx.amount
+            && tx.tx_type == TransactionType::Deposit
+        {
             client_tx_registry
                 .entry((tx.client, tx.tx))
                 .or_insert(amount);
         }
 
-        if let Err(err) = apply_tx(client_state, &tx, &client_tx_registry) {
+        if let Err(err) = apply_tx(client_state, &tx, &mut client_tx_registry) {
             error!(
                 %err,
                 client = client_state.client,
@@ -142,7 +144,7 @@ async fn spawn_worker(mut rx: mpsc::Receiver<Transaction>) -> Vec<ClientState> {
 fn apply_tx(
     client_state: &mut ClientState,
     tx: &Transaction,
-    client_tx_registry: &HashMap<ClientTx, Decimal>,
+    client_tx_registry: &mut HashMap<ClientTx, Decimal>,
 ) -> Result<(), PenguinError> {
     use TransactionType as TType;
 
@@ -207,6 +209,8 @@ fn apply_tx(
 
             client_state.held -= *tx_amount;
             client_state.available += *tx_amount;
+
+            client_tx_registry.remove(&(tx.client, tx.tx));
         }
         TType::Chargeback => {
             let Some(tx_amount) = client_tx_registry.get(&(tx.client, tx.tx)) else {
@@ -220,9 +224,10 @@ fn apply_tx(
             };
 
             client_state.held -= *tx_amount;
-            client_state.available -= *tx_amount;
             client_state.total -= *tx_amount;
             client_state.locked = true;
+
+            client_tx_registry.remove(&(tx.client, tx.tx));
         }
     }
 
@@ -308,19 +313,19 @@ mod tests {
     #[test]
     fn deposit_and_withdrawal_update_balances() {
         let mut client_state = ClientState::new(1);
-        let registry: HashMap<ClientTx, Decimal> = HashMap::new();
+        let mut registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
-            &registry,
+            &mut registry,
         )
         .expect("deposit should succeed");
 
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Withdrawal, 1, 2, Some(dec("0.4"))),
-            &registry,
+            &mut registry,
         )
         .expect("withdrawal should succeed");
 
@@ -330,19 +335,19 @@ mod tests {
     #[test]
     fn withdrawal_with_insufficient_funds_is_ignored() {
         let mut client_state = ClientState::new(1);
-        let registry: HashMap<ClientTx, Decimal> = HashMap::new();
+        let mut registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
-            &registry,
+            &mut registry,
         )
         .expect("deposit should succeed");
 
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Withdrawal, 1, 2, Some(dec("2.0"))),
-            &registry,
+            &mut registry,
         )
         .expect("withdrawal is ignored when insufficient");
 
@@ -357,7 +362,7 @@ mod tests {
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
-            &registry,
+            &mut registry,
         )
         .expect("deposit should succeed");
 
@@ -366,19 +371,21 @@ mod tests {
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Dispute, 1, 1, None),
-            &registry,
+            &mut registry,
         )
         .expect("dispute should succeed");
         assert_state(&client_state, 1, dec("0"), dec("1.0"), dec("1.0"));
+        assert_eq!(registry.len(), 1);
 
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Resolve, 1, 1, None),
-            &registry,
+            &mut registry,
         )
         .expect("resolve should succeed");
 
         assert_state(&client_state, 1, dec("1.0"), dec("0"), dec("1.0"));
+        assert_eq!(registry.len(), 0);
     }
 
     #[test]
@@ -389,7 +396,7 @@ mod tests {
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
-            &registry,
+            &mut registry,
         )
         .expect("deposit should succeed");
 
@@ -398,39 +405,40 @@ mod tests {
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Dispute, 1, 1, None),
-            &registry,
+            &mut registry,
         )
         .expect("dispute should succeed");
 
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Chargeback, 1, 1, None),
-            &registry,
+            &mut registry,
         )
         .expect("chargeback should succeed");
 
         assert!(client_state.locked);
-        assert_state(&client_state, 1, dec("-1.0"), dec("0"), dec("0"));
+        assert_state(&client_state, 1, dec("0"), dec("0"), dec("0"));
+        assert_eq!(registry.len(), 0);
 
         apply_tx(
             &mut client_state,
             &tx(TransactionType::Deposit, 1, 2, Some(dec("5.0"))),
-            &registry,
+            &mut registry,
         )
         .expect("locked accounts ignore deposits");
 
-        assert_state(&client_state, 1, dec("-1.0"), dec("0"), dec("0"));
+        assert_state(&client_state, 1, dec("0"), dec("0"), dec("0"));
     }
 
     #[test]
     fn deposit_without_amount_is_an_error() {
         let mut client_state = ClientState::new(1);
-        let registry: HashMap<ClientTx, Decimal> = HashMap::new();
+        let mut registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         let err = apply_tx(
             &mut client_state,
             &tx(TransactionType::Deposit, 1, 1, None),
-            &registry,
+            &mut registry,
         )
         .expect_err("expected deposit without amount to error");
 

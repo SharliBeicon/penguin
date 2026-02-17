@@ -129,7 +129,7 @@ impl ClientState {
 pub(crate) type ClientTx = (u16, u32);
 
 /// Supported transaction types.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TransactionType {
     /// Increase available funds.
