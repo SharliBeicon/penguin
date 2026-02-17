@@ -4,9 +4,12 @@
     <div id="toc">
         <ul style="list-style: none">
             <summary>
-                <h1> Penguin </h1>
+                <img src="misc/title.svg" alt="Penguin" />
             </summary>
         </ul>
     </div>
     <h2>A [p]ayments [engin]e</h2>
+    <a href="https://github.com/SharliBeicon/penguin/actions/workflows/rust.yml">
+        <img src="https://github.com/SharliBeicon/penguin/actions/workflows/rust.yml/badge.svg?branch=main" alt="Rust CI" />
+    </a>
 </div>
