@@ -1,5 +1,5 @@
 <div align="center">
   <img src="misc/logo.png" alt="Penguin" width="200" />
-  <p style="font-size: 48px; font-weight: 800; margin: 12px 0 4px;">Penguin</p>
-  <p style="font-size: 36px; font-weight: 700; margin: 0;">A [p]ayments [engin]e</p>
+  <img src="misc/title.svg" alt="Penguin" />
+  <h2>A [p]ayments [engin]e</h2>
 </div>
