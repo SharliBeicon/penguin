@@ -228,12 +228,7 @@ mod tests {
         Decimal::from_str(value).expect("valid decimal")
     }
 
-    fn tx(
-        tx_type: TransactionType,
-        client: u16,
-        tx: u32,
-        amount: Option<Decimal>,
-    ) -> Transaction {
+    fn tx(tx_type: TransactionType, client: u16, tx: u32, amount: Option<Decimal>) -> Transaction {
         Transaction {
             tx_type,
             client,
@@ -284,8 +279,11 @@ mod tests {
 
     #[tokio::test]
     async fn run_returns_parse_error_with_line_number() {
-        let reader = vec![Ok(tx(TransactionType::Deposit, 1, 1, Some(dec("1.0")))), Err(())]
-            .into_iter();
+        let reader = vec![
+            Ok(tx(TransactionType::Deposit, 1, 1, Some(dec("1.0")))),
+            Err(()),
+        ]
+        .into_iter();
         let mut penguin = Penguin {
             reader,
             num_workers: 1,
