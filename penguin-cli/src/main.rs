@@ -33,7 +33,8 @@ async fn main() -> Result<(), CliError> {
 
     let mut penguin = PenguinBuilder::from_reader(reader)
         .with_num_workers(num_workers)
-        .build();
+        .with_logger("penguin.log")
+        .build()?;
 
     let output = penguin.run().await?;
 
