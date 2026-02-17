@@ -1,6 +1,6 @@
 use clap::Parser;
 use csv::{ReaderBuilder, Trim, WriterBuilder};
-use libpenguin::{PenguinBuilder, PenguinError};
+use libpenguin::prelude::*;
 use std::{io, num::NonZeroUsize};
 use thiserror::Error;
 
