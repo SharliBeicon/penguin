@@ -121,6 +121,7 @@ async fn spawn_worker(mut rx: mpsc::Receiver<Transaction>) -> Vec<ClientState> {
 
         if let Some(amount) = tx.amount
             && tx.tx_type == TransactionType::Deposit
+            && !client_state.locked
         {
             client_tx_registry
                 .entry((tx.client, tx.tx))
