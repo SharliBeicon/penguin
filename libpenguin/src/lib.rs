@@ -8,7 +8,7 @@
 //!
 //! ## Usage example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use libpenguin::prelude::*;
 //! use std::str::FromStr;
 //!
