@@ -13,7 +13,6 @@
         <img src="https://github.com/SharliBeicon/penguin/actions/workflows/rust.yml/badge.svg?branch=main" alt="Rust CI" />
     </a>
 </div>
----
 
 Penguin is a toy Payments Engine with the ability to read a list of transactions (deposits, withdrawals, disputes, resolves and chargebacks) for different clients and returns the status of each client after that transactions sequence.
 
@@ -27,6 +26,14 @@ This project is divided in two parts.
 `Penguin Engine` has a pretty straightforward API. Just build a `Penguin` instance with the help of the `PenguinBuilder` struct, passing a reader (an iterator over a sequence of `Transaction`s) to it and your desired configuration options. 
 
 Once `Penguin` is built, just await for `run()` method to finish and it will output a list of `ClientStates` for you to handle as you desire.
+
+For a comprehensive library documentation, please run:
+
+```bash
+cargo doc -p libpenguin --open
+```
+
+`libpenguin` package has to be explicitly specified since the default crate of the project is `penguin-cli`, to be able to run it with a plain `cargo run` command.
 
 #### Usage example
 
@@ -72,7 +79,8 @@ No AI has been used to solve the core business logic of this project. Architectu
 
 However, `opencode` has been used as an assistant to solve some "side quests":
 
-- To clarify the syntax of certain APIs: "Can tracing write the formatted version of the error instead of the enum variant?"
-- To refactor a specific piece of code: "I don't like the thread spawning behavior in the Penguin::run() function. Move it to a separate spawn_worker() one."
+- To clarify the syntax of certain APIs: "How can `tracing` write the formatted version of the error instead of the enum variant."
+- To refactor a specific piece of code: "I don't like the thread spawning behavior in the `Penguin::run()` function. Move it to a separated `spawn_worker()` one."
 - To develop the test suite: Given some inputs, some expected outputs, and the current project implementation, a decent first iteration of the test suite was made by AI. The test suite was later reviewed by me.
+- To make me sure we comply with certain constraints: "Float numbers can lead to unexpected behavior while leading with decimal numbers. Is there a safer approach to handle them?" - That made me use `rust_decimal::Decimal` type.
 - The cute penguin logo.

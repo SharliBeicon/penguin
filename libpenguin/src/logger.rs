@@ -1,10 +1,14 @@
 use std::{io, path::Path};
 
+/// Tracing logger that keeps a background guard alive.
+/// Tracing can keep sending logs messages as long this guard is alive.
 pub struct Logger {
     _guard: tracing_appender::non_blocking::WorkerGuard,
 }
 
 impl Logger {
+    /// Initialize tracing to a file and return a guard
+    /// Log level respect the `RUST_LOG` env filter.
     pub fn try_init_from_path(path: impl AsRef<Path>) -> io::Result<Self> {
         let file = std::fs::OpenOptions::new()
             .create(true)

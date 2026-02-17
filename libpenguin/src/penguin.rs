@@ -4,6 +4,7 @@ use std::{collections::HashMap, num::NonZero, path::PathBuf};
 use tokio::{sync::mpsc, task::JoinSet};
 use tracing::{error, warn};
 
+/// Core engine that consumes transactions and produces client states.
 pub struct Penguin<T> {
     reader: T,
     num_workers: usize,
@@ -14,6 +15,7 @@ impl<T, E> Penguin<T>
 where
     T: Iterator<Item = TxResult<E>>,
 {
+    /// Run the engine until the input iterator is over.
     pub async fn run(&mut self) -> Result<Vec<ClientState>, PenguinError> {
         let mut senders: HashMap<u16, mpsc::Sender<Transaction>> =
             HashMap::with_capacity(self.num_workers);
@@ -49,6 +51,7 @@ where
     }
 }
 
+/// Builder for configuring and creating a [`Penguin`] instance.
 pub struct PenguinBuilder<T> {
     reader: T,
     num_workers: Option<usize>,
@@ -59,6 +62,7 @@ impl<T, E> PenguinBuilder<T>
 where
     T: Iterator<Item = TxResult<E>>,
 {
+    /// Start a builder from an iterator of transactions.
     pub fn from_reader(reader: T) -> Self {
         Self {
             reader,
@@ -67,6 +71,9 @@ where
         }
     }
 
+    /// Set the number of concurrent workers.
+    ///
+    /// This controls how transactions are sharded by client id.
     pub fn with_num_workers(self, num_workers: NonZero<usize>) -> Self {
         Self {
             reader: self.reader,
@@ -75,6 +82,7 @@ where
         }
     }
 
+    /// Enable background logging to a file.
     pub fn with_logger(self, path: impl Into<PathBuf>) -> Self {
         Self {
             reader: self.reader,
@@ -83,6 +91,7 @@ where
         }
     }
 
+    /// Build a configured [`Penguin`] instance.
     pub fn build(self) -> Result<Penguin<T>, PenguinError> {
         let num_workers = self.num_workers.unwrap_or(1);
 
@@ -100,6 +109,7 @@ where
     }
 }
 
+/// Process transactions for a subset of clients on a worker task.
 async fn spawn_worker(mut rx: mpsc::Receiver<Transaction>) -> Vec<ClientState> {
     let mut client_states: HashMap<u16, ClientState> = HashMap::new();
     let mut client_tx_registry: HashMap<ClientTx, Decimal> = HashMap::new();
@@ -128,6 +138,7 @@ async fn spawn_worker(mut rx: mpsc::Receiver<Transaction>) -> Vec<ClientState> {
     client_states.into_values().collect()
 }
 
+/// Apply a single transaction to a client state.
 fn apply_tx(
     client_state: &mut ClientState,
     tx: &Transaction,

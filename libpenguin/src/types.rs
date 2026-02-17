@@ -6,15 +6,25 @@ use tokio::sync::mpsc::error::SendError;
 
 pub(crate) type TxResult<E> = Result<Transaction, E>;
 
+/// A transaction coming from the input stream.
+///
+/// Any source is fine as long as it can produce values compatible with this struct.
 #[derive(Debug, Deserialize)]
 pub struct Transaction {
     #[serde(rename = "type")]
+    /// Transaction type.
     pub tx_type: TransactionType,
+    /// Client identifier.
     pub client: u16,
+    /// Transaction identifier.
     pub tx: u32,
+    /// Optional amount for deposit/withdrawal transactions.
     pub amount: Option<Decimal>,
 }
 
+/// Parse a transaction from a CSV-like line.
+///
+/// The expected format is: `type, client, tx, amount` where `amount` is optional.
 impl FromStr for Transaction {
     type Err = PenguinError;
 
@@ -70,12 +80,18 @@ impl FromStr for Transaction {
     }
 }
 
+/// Current state for a client.
 #[derive(Debug)]
 pub struct ClientState {
+    /// Client identifier.
     pub client: u16,
+    /// Funds available for withdrawal.
     pub available: Decimal,
+    /// Funds held due to disputes.
     pub held: Decimal,
+    /// Total funds (available + held).
     pub total: Decimal,
+    /// Whether the account is locked by a chargeback.
     pub locked: bool,
 }
 
@@ -97,6 +113,7 @@ impl Serialize for ClientState {
 }
 
 impl ClientState {
+    /// Create a new client state.
     pub fn new(client: u16) -> Self {
         Self {
             client,
@@ -110,26 +127,38 @@ impl ClientState {
 
 pub(crate) type ClientTx = (u16, u32); // (client_id, transaction_id)
 
+/// Supported transaction types.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TransactionType {
+    /// Increase available funds.
     Deposit,
+    /// Decrease available funds if enough balance exists.
     Withdrawal,
+    /// Move funds from available to held.
     Dispute,
+    /// Release held funds back to available.
     Resolve,
+    /// Finalize a dispute and lock the account.
     Chargeback,
 }
 
+/// Errors emitted by the engine and helpers.
 #[derive(Error, Debug)]
 pub enum PenguinError {
+    /// I/O error while reading input or writing logs.
     #[error("I/O error: {0}")]
     IO(#[from] io::Error),
+    /// Parsing failed at a given line number in the input.
     #[error("Error while parsing on line {0}")]
     Parse(usize),
+    /// Failed to send a transaction to a worker channel.
     #[error("Error sending transaction to the channel: {0}")]
     ChannelSend(#[from] SendError<Transaction>),
+    /// Deposit/withdrawal was missing an amount.
     #[error("Client {0} received a deposit/withdrawal transaction with no amount associated.")]
     DepositOrWithdrawalWithoutAmount(u16),
+    /// Transaction text did not match the expected CSV-like format.
     #[error("Error parsing transaction: {0}")]
     TransactionParse(Cow<'static, str>),
 }
