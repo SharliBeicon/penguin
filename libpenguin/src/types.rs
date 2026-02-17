@@ -125,7 +125,8 @@ impl ClientState {
     }
 }
 
-pub(crate) type ClientTx = (u16, u32); // (client_id, transaction_id)
+/// Convenience alias for (client_id, transaction_id)
+pub(crate) type ClientTx = (u16, u32);
 
 /// Supported transaction types.
 #[derive(Debug, Deserialize)]
