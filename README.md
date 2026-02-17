@@ -23,7 +23,7 @@ This project is divided in two parts.
 
 ### libpenguin
 
-`Penguin Engine` has a pretty straightforward API. Just build a `Penguin` instance with the help of the `PenguinBuilder` struct, passing a reader (an iterator over a sequence of `Transaction`s) to it and your desired configuration options. 
+`Penguin Engine` has a pretty straightforward API. Just build a `Penguin` instance with the help of the `PenguinBuilder` struct, passing a reader (an iterator over a sequence of `Transactions`) and your desired configuration options. 
 
 Once `Penguin` is built, just await for `run()` method to finish and it will output a list of `ClientStates` for you to handle as you desire.
 
