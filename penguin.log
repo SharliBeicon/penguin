@@ -1,2 +1,0 @@
-2026-02-17T11:44:06.401067Z ERROR failed to apply transaction err=Client 1 received a deposit/withdrawal transaction with no amount associated. client=1 tx=5
-2026-02-17T11:44:06.401071Z  WARN insufficient funds for withdrawal client=2 tx=5 amount=3.0 available=2.0
