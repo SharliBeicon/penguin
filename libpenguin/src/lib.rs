@@ -3,7 +3,7 @@ use std::{collections::HashMap, io, num::NonZero};
 use thiserror::Error;
 use tokio::{
     sync::mpsc::{self, error::SendError},
-    task::{JoinError, JoinHandle},
+    task::{JoinHandle, JoinSet},
 };
 
 #[derive(Debug, Deserialize)]
@@ -50,14 +50,12 @@ pub enum TransactionType {
 pub enum PenguinError {
     #[error("I/O error: {0}")]
     IO(#[from] io::Error),
-    #[error("Error while parsing Transaction from reader")]
-    Parse,
+    #[error("Error while parsing on line {0}")]
+    Parse(usize),
     #[error("Error sending transaction to the channel: {0}")]
     ChannelSend(#[from] SendError<Transaction>),
     #[error("Client {0} received a deposit/withdrawal transaction with no amount associated.")]
     DepositOrWithdrawalWithoutAmount(u16),
-    #[error("Worker task failed: {0}")]
-    WorkerJoin(#[from] JoinError),
 }
 
 type TxResult<E> = Result<Transaction, E>;
@@ -65,8 +63,6 @@ type TxResult<E> = Result<Transaction, E>;
 pub struct Penguin<T> {
     reader: T,
     num_workers: usize,
-    senders: HashMap<u16, mpsc::Sender<Transaction>>,
-    join_handles: Vec<JoinHandle<Vec<ClientState>>>,
 }
 
 impl<T, E> Penguin<T>
@@ -74,30 +70,37 @@ where
     T: Iterator<Item = TxResult<E>>,
 {
     pub async fn run(&mut self) -> Result<Vec<ClientState>, PenguinError> {
+        let mut senders: HashMap<u16, mpsc::Sender<Transaction>> =
+            HashMap::with_capacity(self.num_workers);
+        let mut set = JoinSet::new();
+
         for group_id in 0..self.num_workers {
             let group_id = group_id as u16;
             let (tx, rx) = mpsc::channel(1024);
 
-            self.senders.insert(group_id, tx);
-            self.join_handles
-                .push(tokio::spawn(spawn_worker(group_id, rx)));
+            senders.insert(group_id, tx);
+            set.spawn(spawn_worker(group_id, rx));
         }
 
-        while let Some(row) = self.reader.next() {
-            let tx = row.map_err(|_| PenguinError::Parse)?;
+        let mut line_count = 1;
+        while let Some(line) = self.reader.next() {
+            let tx = line.map_err(|_| PenguinError::Parse(line_count))?;
             let group = (tx.client) % self.num_workers as u16;
-            self.senders[&group].send(tx).await?;
+            senders[&group].send(tx).await?;
+            line_count += 1;
         }
 
-        self.senders.clear();
+        drop(senders);
 
-        let mut all_clients = Vec::new();
-        for handle in self.join_handles.drain(..) {
-            let mut group_clients = handle.await?;
-            all_clients.append(&mut group_clients);
+        let mut group_clients = Vec::with_capacity(self.num_workers);
+        while let Some(handle) = set.join_next().await {
+            match handle {
+                Ok(mut group_client) => group_clients.append(&mut group_client),
+                Err(_) => todo!("log an error"),
+            }
         }
 
-        Ok(all_clients)
+        Ok(group_clients)
     }
 }
 
@@ -181,14 +184,10 @@ where
 
     pub fn build(self) -> Penguin<T> {
         let num_workers = self.num_workers.unwrap_or(1);
-        let senders: HashMap<u16, mpsc::Sender<Transaction>> = HashMap::with_capacity(num_workers);
-        let join_handles: Vec<JoinHandle<Vec<ClientState>>> = Vec::with_capacity(num_workers);
 
         Penguin {
             reader: self.reader,
             num_workers,
-            senders,
-            join_handles,
         }
     }
 }
