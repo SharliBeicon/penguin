@@ -150,6 +150,12 @@ fn apply_tx(
     use TransactionType as TType;
 
     if client_state.locked {
+        warn!(
+            client = client_state.client,
+            tx = tx.tx,
+            "Received transaction for locked client. Ignoring it."
+        );
+
         return Ok(());
     }
 
