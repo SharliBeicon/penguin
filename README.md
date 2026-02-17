@@ -80,7 +80,7 @@ No AI has been used to solve the core business logic of this project. Architectu
 However, `opencode` has been used as an assistant to solve some "side quests":
 
 - To clarify the syntax of certain APIs: "How can `tracing` write the formatted version of the error instead of the enum variant."
-- To refactor a specific piece of code: "I don't like the thread spawning behavior in the `Penguin::run()` function. Move it to a separated `spawn_worker()` one."
+- To refactor a specific piece of code: "I don't like the thread spawning being in the `Penguin::run()` function. Move it to a separated `spawn_worker()` one."
 - To develop the test suite: Given some inputs, some expected outputs, and the current project implementation, a decent first iteration of the test suite was made by AI. The test suite was later reviewed by me.
 - To make me sure we comply with certain constraints: "Float numbers can lead to unexpected behavior while leading with decimal numbers. Is there a safer approach to handle them?" - That made me use `rust_decimal::Decimal` type.
 - The cute penguin logo.
