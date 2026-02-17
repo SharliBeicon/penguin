@@ -1,4 +1,5 @@
 use crate::{logger::Logger, types::*};
+use rust_decimal::Decimal;
 use std::{collections::HashMap, num::NonZero, path::PathBuf};
 use tokio::{sync::mpsc, task::JoinSet};
 use tracing::{error, warn};
@@ -101,7 +102,7 @@ where
 
 async fn spawn_worker(mut rx: mpsc::Receiver<Transaction>) -> Vec<ClientState> {
     let mut client_states: HashMap<u16, ClientState> = HashMap::new();
-    let mut client_tx_registry: HashMap<ClientTx, f64> = HashMap::new();
+    let mut client_tx_registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
     while let Some(tx) = rx.recv().await {
         let client_state = client_states
@@ -130,7 +131,7 @@ async fn spawn_worker(mut rx: mpsc::Receiver<Transaction>) -> Vec<ClientState> {
 fn apply_tx(
     client_state: &mut ClientState,
     tx: &Transaction,
-    client_tx_registry: &HashMap<ClientTx, f64>,
+    client_tx_registry: &HashMap<ClientTx, Decimal>,
 ) -> Result<(), PenguinError> {
     use TransactionType as TType;
 
@@ -154,12 +155,12 @@ fn apply_tx(
                 .ok_or(PenguinError::DepositOrWithdrawalWithoutAmount(
                     client_state.client,
                 ))?;
-            if client_state.available - amount < 0.0 {
+            if client_state.available < amount {
                 warn!(
                     client = client_state.client,
                     tx = tx.tx,
-                    amount,
-                    available = client_state.available,
+                    amount = %amount,
+                    available = %client_state.available,
                     "insufficient funds for withdrawal"
                 );
 
@@ -179,8 +180,8 @@ fn apply_tx(
                 return Ok(());
             };
 
-            client_state.held += tx_amount;
-            client_state.available -= tx_amount;
+            client_state.held += *tx_amount;
+            client_state.available -= *tx_amount;
         }
         TType::Resolve => {
             let Some(tx_amount) = client_tx_registry.get(&(tx.client, tx.tx)) else {
@@ -193,8 +194,8 @@ fn apply_tx(
                 return Ok(());
             };
 
-            client_state.held -= tx_amount;
-            client_state.available += tx_amount;
+            client_state.held -= *tx_amount;
+            client_state.available += *tx_amount;
         }
         TType::Chargeback => {
             let Some(tx_amount) = client_tx_registry.get(&(tx.client, tx.tx)) else {
@@ -207,9 +208,9 @@ fn apply_tx(
                 return Ok(());
             };
 
-            client_state.held -= tx_amount;
-            client_state.available -= tx_amount;
-            client_state.total -= tx_amount;
+            client_state.held -= *tx_amount;
+            client_state.available -= *tx_amount;
+            client_state.total -= *tx_amount;
             client_state.locked = true;
         }
     }
@@ -221,8 +222,18 @@ fn apply_tx(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::str::FromStr;
 
-    fn tx(tx_type: TransactionType, client: u16, tx: u32, amount: Option<f64>) -> Transaction {
+    fn dec(value: &str) -> Decimal {
+        Decimal::from_str(value).expect("valid decimal")
+    }
+
+    fn tx(
+        tx_type: TransactionType,
+        client: u16,
+        tx: u32,
+        amount: Option<Decimal>,
+    ) -> Transaction {
         Transaction {
             tx_type,
             client,
@@ -231,11 +242,17 @@ mod tests {
         }
     }
 
-    fn assert_state(state: &ClientState, client: u16, available: f64, held: f64, total: f64) {
+    fn assert_state(
+        state: &ClientState,
+        client: u16,
+        available: Decimal,
+        held: Decimal,
+        total: Decimal,
+    ) {
         assert_eq!(state.client, client);
-        assert!((state.available - available).abs() < f64::EPSILON);
-        assert!((state.held - held).abs() < f64::EPSILON);
-        assert!((state.total - total).abs() < f64::EPSILON);
+        assert_eq!(state.available, available);
+        assert_eq!(state.held, held);
+        assert_eq!(state.total, total);
     }
 
     #[tokio::test]
@@ -261,13 +278,14 @@ mod tests {
         output.sort_by_key(|state| state.client);
 
         assert_eq!(output.len(), 2);
-        assert_state(&output[0], 1, 1.5, 0.0, 1.5);
-        assert_state(&output[1], 2, 2.0, 0.0, 2.0);
+        assert_state(&output[0], 1, dec("1.5"), dec("0"), dec("1.5"));
+        assert_state(&output[1], 2, dec("2"), dec("0"), dec("2"));
     }
 
     #[tokio::test]
     async fn run_returns_parse_error_with_line_number() {
-        let reader = vec![Ok(tx(TransactionType::Deposit, 1, 1, Some(1.0))), Err(())].into_iter();
+        let reader = vec![Ok(tx(TransactionType::Deposit, 1, 1, Some(dec("1.0")))), Err(())]
+            .into_iter();
         let mut penguin = Penguin {
             reader,
             num_workers: 1,
@@ -281,60 +299,60 @@ mod tests {
     #[test]
     fn deposit_and_withdrawal_update_balances() {
         let mut client_state = ClientState::new(1);
-        let registry = HashMap::new();
+        let registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         apply_tx(
             &mut client_state,
-            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
             &registry,
         )
         .expect("deposit should succeed");
 
         apply_tx(
             &mut client_state,
-            &tx(TransactionType::Withdrawal, 1, 2, Some(0.4)),
+            &tx(TransactionType::Withdrawal, 1, 2, Some(dec("0.4"))),
             &registry,
         )
         .expect("withdrawal should succeed");
 
-        assert_state(&client_state, 1, 0.6, 0.0, 0.6);
+        assert_state(&client_state, 1, dec("0.6"), dec("0"), dec("0.6"));
     }
 
     #[test]
     fn withdrawal_with_insufficient_funds_is_ignored() {
         let mut client_state = ClientState::new(1);
-        let registry = HashMap::new();
+        let registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         apply_tx(
             &mut client_state,
-            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
             &registry,
         )
         .expect("deposit should succeed");
 
         apply_tx(
             &mut client_state,
-            &tx(TransactionType::Withdrawal, 1, 2, Some(2.0)),
+            &tx(TransactionType::Withdrawal, 1, 2, Some(dec("2.0"))),
             &registry,
         )
         .expect("withdrawal is ignored when insufficient");
 
-        assert_state(&client_state, 1, 1.0, 0.0, 1.0);
+        assert_state(&client_state, 1, dec("1.0"), dec("0"), dec("1.0"));
     }
 
     #[test]
     fn dispute_and_resolve_move_funds_between_available_and_held() {
         let mut client_state = ClientState::new(1);
-        let mut registry = HashMap::new();
+        let mut registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         apply_tx(
             &mut client_state,
-            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
             &registry,
         )
         .expect("deposit should succeed");
 
-        registry.insert((1, 1), 1.0);
+        registry.insert((1, 1), dec("1.0"));
 
         apply_tx(
             &mut client_state,
@@ -342,7 +360,7 @@ mod tests {
             &registry,
         )
         .expect("dispute should succeed");
-        assert_state(&client_state, 1, 0.0, 1.0, 1.0);
+        assert_state(&client_state, 1, dec("0"), dec("1.0"), dec("1.0"));
 
         apply_tx(
             &mut client_state,
@@ -351,22 +369,22 @@ mod tests {
         )
         .expect("resolve should succeed");
 
-        assert_state(&client_state, 1, 1.0, 0.0, 1.0);
+        assert_state(&client_state, 1, dec("1.0"), dec("0"), dec("1.0"));
     }
 
     #[test]
     fn chargeback_locks_account_and_updates_totals() {
         let mut client_state = ClientState::new(1);
-        let mut registry = HashMap::new();
+        let mut registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         apply_tx(
             &mut client_state,
-            &tx(TransactionType::Deposit, 1, 1, Some(1.0)),
+            &tx(TransactionType::Deposit, 1, 1, Some(dec("1.0"))),
             &registry,
         )
         .expect("deposit should succeed");
 
-        registry.insert((1, 1), 1.0);
+        registry.insert((1, 1), dec("1.0"));
 
         apply_tx(
             &mut client_state,
@@ -383,22 +401,22 @@ mod tests {
         .expect("chargeback should succeed");
 
         assert!(client_state.locked);
-        assert_state(&client_state, 1, -1.0, 0.0, 0.0);
+        assert_state(&client_state, 1, dec("-1.0"), dec("0"), dec("0"));
 
         apply_tx(
             &mut client_state,
-            &tx(TransactionType::Deposit, 1, 2, Some(5.0)),
+            &tx(TransactionType::Deposit, 1, 2, Some(dec("5.0"))),
             &registry,
         )
         .expect("locked accounts ignore deposits");
 
-        assert_state(&client_state, 1, -1.0, 0.0, 0.0);
+        assert_state(&client_state, 1, dec("-1.0"), dec("0"), dec("0"));
     }
 
     #[test]
     fn deposit_without_amount_is_an_error() {
         let mut client_state = ClientState::new(1);
-        let registry = HashMap::new();
+        let registry: HashMap<ClientTx, Decimal> = HashMap::new();
 
         let err = apply_tx(
             &mut client_state,

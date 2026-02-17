@@ -10,3 +10,4 @@ serde = { version = "1.0.228", features = ["derive"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
+rust_decimal.workspace = true
