@@ -13,6 +13,7 @@
         <img src="https://github.com/SharliBeicon/penguin/actions/workflows/rust.yml/badge.svg?branch=main" alt="Rust CI" />
     </a>
 </div>
+---
 
 Penguin is a toy Payments Engine with the ability to read a list of transactions (deposits, withdrawals, disputes, resolves and chargebacks) for different clients and returns the status of each client after that transactions sequence.
 
@@ -57,7 +58,13 @@ let output = penguin.run().await?;
 
 ### penguin-cli
 
-lorem ipsum
+`penguin-cli` is a tiny wrapper around `libpenguin`. It reads transactions from a CSV file and prints the resulting client states to stdout, so you can pipe it to a file.
+
+#### Usage example
+
+```bash
+cargo run -- input.csv > output.csv
+```
 
 ### AI usage disclaimer
 
