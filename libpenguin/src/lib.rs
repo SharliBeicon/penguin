@@ -5,7 +5,7 @@
 //!
 //! The core entry point is [`PenguinBuilder`]. Build a [`Penguin`] instance with an
 //! iterator that yields `Result<Transaction, E>` items, configure it, and await `run()`.
-//! If you want to stream worker outputs as they finish, use [`Penguin::process`].
+//! If you want to stream worker outputs as they finish, use [`Penguin::get_stream()`].
 //!
 //! ## Usage example
 //!
