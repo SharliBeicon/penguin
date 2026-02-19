@@ -8,8 +8,10 @@ repository.workspace = true
 readme.workspace = true
 description.workspace = true
 
+
 [dependencies]
 tokio.workspace = true
+tokio-stream.workspace = true
 thiserror.workspace = true
 clap = { version = "4.5.58", features = ["derive"] }
 csv = "1.4.0"

@@ -2,6 +2,7 @@ use crate::{logger::Logger, types::*};
 use rust_decimal::Decimal;
 use std::{collections::HashMap, num::NonZero, path::PathBuf};
 use tokio::{sync::mpsc, task::JoinSet};
+use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::{error, warn};
 
 /// Core engine that consumes transactions and produces client states.
@@ -49,6 +50,50 @@ where
 
         Ok(group_clients)
     }
+
+    /// Run the engine and stream worker outputs as they finish.
+    pub async fn get_stream(
+        &mut self,
+    ) -> Result<impl Stream<Item = Vec<ClientState>>, PenguinError> {
+        let mut senders: HashMap<u16, mpsc::Sender<Transaction>> =
+            HashMap::with_capacity(self.num_workers);
+        let mut set = JoinSet::new();
+
+        for group_id in 0..self.num_workers {
+            let group_id = group_id as u16;
+            let (tx, rx) = mpsc::channel(1024);
+
+            senders.insert(group_id, tx);
+            set.spawn(spawn_worker(rx));
+        }
+
+        let mut line_count = 1;
+        for line in self.reader.by_ref() {
+            let tx = line.map_err(|_| PenguinError::Parse(line_count))?;
+            let group = (tx.client) % self.num_workers as u16;
+            senders[&group].send(tx).await?;
+            line_count += 1;
+        }
+
+        drop(senders);
+
+        let (result_tx, result_rx) = mpsc::channel(self.num_workers);
+        tokio::spawn(async move {
+            let mut set = set;
+            while let Some(handle) = set.join_next().await {
+                match handle {
+                    Ok(group_client) => {
+                        if result_tx.send(group_client).await.is_err() {
+                            return;
+                        }
+                    }
+                    Err(err) => error!(%err, "worker task failed"),
+                }
+            }
+        });
+
+        Ok(ReceiverStream::new(result_rx))
+    }
 }
 
 /// Builder for configuring and creating a [`Penguin`] instance.
@@ -67,7 +112,7 @@ where
         Self {
             reader,
             num_workers: None,
-            log_file: Some(PathBuf::from("penguin.log")),
+            log_file: None,
         }
     }
 
