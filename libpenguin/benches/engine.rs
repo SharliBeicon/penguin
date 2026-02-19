@@ -5,6 +5,7 @@ use std::{
     io::{BufRead, BufReader, Lines},
     num::NonZeroUsize,
     path::PathBuf,
+    time::Duration,
 };
 use tokio_stream::StreamExt;
 
@@ -15,10 +16,15 @@ fn create_reader(file: File) -> Lines<BufReader<File>> {
     reader
 }
 
+fn bench_config() -> Criterion {
+    Criterion::default().measurement_time(Duration::from_secs(30))
+}
+
 fn bench_engine(c: &mut Criterion) {
     let input_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../input.csv");
 
-    let num_workers = NonZeroUsize::new(4).unwrap();
+    let num_workers = std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(8).unwrap());
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -63,5 +69,10 @@ fn bench_engine(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_engine);
+criterion_group!(
+    name = benches;
+    config = bench_config();
+    targets = bench_engine
+);
+
 criterion_main!(benches);
