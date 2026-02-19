@@ -5,11 +5,13 @@
 //!
 //! The core entry point is [`PenguinBuilder`]. Build a [`Penguin`] instance with an
 //! iterator that yields `Result<Transaction, E>` items, configure it, and await `run()`.
+//! If you want to stream worker outputs as they finish, use [`Penguin::process`].
 //!
 //! ## Usage example
 //!
 //! ```rust,ignore
 //! use libpenguin::prelude::*;
+//! use tokio_stream::StreamExt;
 //! use std::str::FromStr;
 //!
 //! let inputs = [
@@ -30,7 +32,16 @@
 //!     .with_logger("penguin.log")
 //!     .build()?;
 //!
+//! // Collect all results at once.
 //! let _output = penguin.run().await?;
+//!
+//! // Or stream worker outputs as they finish.
+//! let mut stream = penguin.process().await?;
+//! while let Some(states) = stream.next().await {
+//!     for state in states {
+//!         println!("{}", state.client);
+//!     }
+//! }
 //! ```
 //!
 //! ## Logging

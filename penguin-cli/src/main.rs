@@ -3,6 +3,7 @@ use csv::{ReaderBuilder, Trim, WriterBuilder};
 use libpenguin::prelude::*;
 use std::{io, num::NonZeroUsize};
 use thiserror::Error;
+use tokio_stream::StreamExt;
 
 /// Penguin CLI - A command line tool to process a list of transactions with Penguin Engine
 #[derive(Parser)]
@@ -36,13 +37,15 @@ async fn main() -> Result<(), CliError> {
         .with_logger("penguin.log")
         .build()?;
 
-    let output = penguin.run().await?;
-
     let mut writer = WriterBuilder::new()
         .has_headers(true)
         .from_writer(io::stdout());
-    for state in output {
-        writer.serialize(state)?;
+
+    let mut stream = penguin.get_stream().await?;
+    while let Some(states) = stream.next().await {
+        for state in states {
+            writer.serialize(state)?;
+        }
     }
     writer.flush()?;
 

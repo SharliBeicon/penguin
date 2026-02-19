@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize, ser::SerializeStruct};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::{borrow::Cow, io, str::FromStr};
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
@@ -9,7 +9,7 @@ pub(crate) type TxResult<E> = Result<Transaction, E>;
 /// A transaction coming from the input stream.
 ///
 /// Any source is fine as long as it can produce values compatible with this struct.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Transaction {
     #[serde(rename = "type")]
     /// Transaction type.
@@ -129,7 +129,7 @@ impl ClientState {
 pub(crate) type ClientTx = (u16, u32);
 
 /// Supported transaction types.
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum TransactionType {
     /// Increase available funds.

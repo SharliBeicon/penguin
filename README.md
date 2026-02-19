@@ -59,7 +59,14 @@ let mut penguin = PenguinBuilder::from_reader(reader) // Iterator over Result<Tr
     .with_logger("penguin.log") // If you want `Penguin` to log possible errors, use this. If you don't call this, nothing will be logged at all
     .build()?;
 
+// You can either await for all ClientStates to return.
 let output = penguin.run().await?;
+
+// Or stream them as workers end.
+let mut stream = penguin.get_stream().await?;
+while let Some(states) = stream.next().await {
+    // Work with states
+}
 ```
 
 

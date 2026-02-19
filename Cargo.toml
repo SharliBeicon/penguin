@@ -14,6 +14,7 @@ description = "A toy [p]ayments [engin]e."
 
 [workspace.dependencies]
 tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "sync"] }
+tokio-stream = "0.1.17"
 thiserror = "2.0.18"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
