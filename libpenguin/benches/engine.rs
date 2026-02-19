@@ -4,6 +4,7 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Lines},
     num::NonZeroUsize,
+    path::PathBuf,
 };
 use tokio_stream::StreamExt;
 
@@ -15,7 +16,7 @@ fn create_reader(file: File) -> Lines<BufReader<File>> {
 }
 
 fn bench_engine(c: &mut Criterion) {
-    let file = File::open("../input.csv").expect("File must exists");
+    let input_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../input.csv");
 
     let num_workers = NonZeroUsize::new(4).unwrap();
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -25,7 +26,7 @@ fn bench_engine(c: &mut Criterion) {
 
     c.bench_function("engine_run_collect", |b| {
         b.iter(|| {
-            let file = file.try_clone().expect("clonedfile");
+            let file = File::open(&input_path).expect("input file must exist");
             let reader = create_reader(file)
                 .map(|line: Result<String, std::io::Error>| line.map_err(PenguinError::from))
                 .map(|line| line.and_then(|l| l.parse::<Transaction>()));
@@ -43,7 +44,7 @@ fn bench_engine(c: &mut Criterion) {
 
     c.bench_function("engine_process_stream", |b| {
         b.iter(|| {
-            let file = file.try_clone().expect("clonedfile");
+            let file = File::open(&input_path).expect("input file must exist");
             let reader = create_reader(file)
                 .map(|line: Result<String, std::io::Error>| line.map_err(PenguinError::from))
                 .map(|line| line.and_then(|l| l.parse::<Transaction>()));
