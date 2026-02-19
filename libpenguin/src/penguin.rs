@@ -112,7 +112,7 @@ where
         Self {
             reader,
             num_workers: None,
-            log_file: Some(PathBuf::from("penguin.log")),
+            log_file: None,
         }
     }
 
